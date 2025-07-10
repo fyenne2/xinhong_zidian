@@ -1,5 +1,7 @@
 #
 # !pip install -U face_recognition
+# !pip install -U streamlit
+
 import os
 import face_recognition
 import numpy as np
@@ -14,15 +16,20 @@ except:
 
 import streamlit as st
 
+
 class XinhongZidian:
     def __init__(self):
-        self.baseimg = "./base_imgs/base_suspect.png"
+        self.baseimg = "./base_imgs/base_suspect.jpg"
         self.target_path = "./base_imgs/"
         self.upload_folder = "./upload_folder/"
+        self.uploaded_img = ""
 
 
 def load_img(configs_):
-    baseimg = configs_.baseimg
+    if configs_.uploaded_img == None:
+        baseimg = configs_.baseimg
+    else:
+        baseimg = configs_.uploaded_img
     target_path = configs_.target_path
     pil_im = Image.open(baseimg)
     display(pil_im.resize((350, 350)))
@@ -45,11 +52,12 @@ def load_img(configs_):
         # "suspect2",
     ]
     print("Learned encoding for", len(known_face_encodings), "images.")
+    st.image(pil_im, width=350)
     return known_face_encodings, known_face_names
 
 
 def infer_(
-    configs_, known_face_encodings, known_face_names, filepath
+    known_face_encodings, known_face_names, filepath
 ):  # Load an image with an unknown face
     unknown_image = face_recognition.load_image_file(filepath)
     # font = ImageFont.truetype(
@@ -64,7 +72,7 @@ def infer_(
     pil_image = Image.fromarray(unknown_image)
     # Create a Pillow ImageDraw Draw instance to draw with
     draw = ImageDraw.Draw(pil_image)
-
+    find_times_ = 0
     # Loop through each face found in the unknown image
     for (top, right, bottom, left), face_encoding in zip(
         face_locations, face_encodings
@@ -82,10 +90,9 @@ def infer_(
         best_match_index = np.argmin(face_distances)
         if matches[best_match_index]:
             name = known_face_names[best_match_index]
-        if face_distances < 0.33:
+        if face_distances < 0.25:
             # Draw a box around the face using the Pillow module
             draw.rectangle(((left, top), (right, bottom)), outline=(0, 0, 255))
-
             # Draw a label with a name below the face
             bbox = draw.textbbox((0, 0), name)  # Provide a font if you have one
             text_width = bbox[2] - bbox[0]
@@ -100,18 +107,51 @@ def infer_(
                 name + "\n" + str(face_distances[0]),
                 fill=(255, 255, 255, 255),
             )
+            find_times_ += 1
 
     # Remove the drawing library from memory as per the Pillow docs
     del draw
-
-    # Display the resulting image
-    display(pil_image)
+    return find_times_, pil_image
 
 
 if __name__ == "__main__":
     configs = XinhongZidian()
-    q = [i for i in os.listdir(configs.target_path)]
-    st.write(q)
-    known_face_encodings, known_face_names = load_img(configs)
-    for i in q:
-        infer_(configs.target_path + i)
+    st.write("# 1. upload your suspect img")
+    configs.uploaded_img = st.file_uploader(
+        "upload a img file", accept_multiple_files=False
+    )
+    if configs.uploaded_img == None:
+        st.write("here is a default img")
+    else:
+        st.write(configs.uploaded_img)
+    q = [
+        i
+        for i in os.listdir(configs.target_path)
+        if i not in ["base_suspect.png", "base_suspect.jpg"]
+    ]
+    try:
+        known_face_encodings, known_face_names = load_img(configs)
+    except:
+        st.write("---")
+        st.warning("# face is not detected")
+
+    st.write("---")
+    st.write("# 2. after uploaded , hit run button to see results.")
+    run_ = st.button("run")
+    alltimes = 0
+
+    if run_:
+        my_bar = st.progress(0, text='running ...')
+        for i, j in enumerate(q):
+            my_bar.progress(i + 1, text=f'running {(str(i + 1))} `s image')
+            find_times_, pil_image = infer_(
+                known_face_encodings=known_face_encodings,
+                known_face_names=known_face_names,
+                filepath=configs.target_path + j,
+            )
+            if find_times_ != 0:
+                st.image(pil_image)
+                alltimes += 1
+
+        if alltimes == 0:
+            st.success("# not finding your suspect!")
